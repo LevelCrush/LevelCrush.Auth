@@ -75,12 +75,13 @@ app.UseCors();
 // remove all bungie/destiny related keys
 app.MapGet("/platform/bungie/logout", (HttpRequest httpRequest) =>
 {
-    /*
     httpRequest.HttpContext.Session.Remove("Destiny.MembershipID");
     httpRequest.HttpContext.Session.Remove("Destiny.Clan");
     httpRequest.HttpContext.Session.Remove("Destiny.MembershipPlatform");
     httpRequest.HttpContext.Session.Remove("Destiny.DisplayName");
-    httpRequest.HttpContext.Session.Remove("BungieState"); */
+    httpRequest.HttpContext.Session.Remove("BungieState");
+
+    return Results.Text("200 OK");
 });
 
 // from our session retrieve bungie/destiny related session information
@@ -269,11 +270,17 @@ app.MapGet("/platform/bungie/validate", async (HttpRequest httpRequest) =>
         }
     }
     
-    /*
+    
     httpRequest.HttpContext.Session.SetString("Destiny.MembershipID", membershipId.ToString());
     httpRequest.HttpContext.Session.SetInt32("Destiny.Clan", inClan ? 1 : 0);
     httpRequest.HttpContext.Session.SetInt32("Destiny.MembershipPlatform", membershipPlatform);
-    httpRequest.HttpContext.Session.SetString("Destiny.DisplayName", membershipDisplayName); */
+    httpRequest.HttpContext.Session.SetString("Destiny.DisplayName", membershipDisplayName);
+
+
+    if (_BundieValidationResults.ContainsKey(token))
+    {
+        _BundieValidationResults.Remove(token);
+    }
 
     _BundieValidationResults.Add(token, new BungieValidationResult()
     {
@@ -442,6 +449,16 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
         InServer = inGuild
     };
     
+    httpRequest.HttpContext.Session.SetString("Discord.DiscordID", discordId);
+    httpRequest.HttpContext.Session.SetInt32("Discord.InServer", inGuild ? 1 : 0);
+    httpRequest.HttpContext.Session.SetString("Discord.DiscordHandle", discordHandle);
+
+
+    if (_DiscordValidationResults.ContainsKey(token))
+    {
+        _DiscordValidationResults.Remove(token);
+    }
+
     _DiscordValidationResults.Add(token, varResult);
     
     var html =
@@ -451,6 +468,30 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
     httpRequest.HttpContext.Response.ContentLength = Encoding.UTF8.GetByteCount(html);
 
     return Results.Content(html);
+});
+
+app.MapGet("/platform/discord/session", (HttpRequest httpRequest) =>
+{
+    var discordId = httpRequest.HttpContext.Session.GetString("Discord.DiscordID");
+    var inServer = httpRequest.HttpContext.Session.GetInt32("Discord.InServer") == 1 ? true : false;
+    var discordHandle =  httpRequest.HttpContext.Session.GetString("Discord.DiscordHandle");
+
+    return Results.Json(new DiscordValidationResult()
+    {
+        Id = discordId ?? "",
+        InServer = inServer,
+        Handle = discordHandle ?? ""
+    });
+
+});
+
+app.MapGet("/platform/discord/logout", (HttpRequest httpRequest) =>
+{
+    httpRequest.HttpContext.Session.Remove("Discord.DiscordID");
+    httpRequest.HttpContext.Session.Remove("Discord.InServer");
+    httpRequest.HttpContext.Session.Remove("Discord.DiscordHandle");
+    httpRequest.HttpContext.Session.Remove("Discord.XToken");
+    return Results.Text("200 OK");
 });
 
 app.MapPost("/platform/discord/claim", async (HttpRequest httpRequest) =>
