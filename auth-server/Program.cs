@@ -11,10 +11,6 @@ using Microsoft.AspNetCore.Mvc;
 using RestSharp;
 using RestSharp.Authenticators;
 
-
-Dictionary<string, BungieValidationResult> _BundieValidationResults = new Dictionary<string, BungieValidationResult>();
-Dictionary<string, DiscordValidationResult> _DiscordValidationResults = new Dictionary<string, DiscordValidationResult>();
-
 var builder = WebApplication.CreateBuilder(args);
 
 // load api configuration information
@@ -103,33 +99,6 @@ app.MapGet("/platform/bungie/session", (HttpRequest httpRequest) =>
 
 });
 
-app.MapPost("/platform/bungie/claim", async (HttpRequest httpRequest) =>
-{
-    var res = await httpRequest.ReadFromJsonAsync<Dictionary<string, string>>();
-    if (res == null)
-    {
-        return Results.Json(new BungieValidationResult());
-    }
-    res.TryGetValue("token", out var token);
-    if (token == null)
-    {
-        return Results.Json(new BungieValidationResult());
-    }
-
-    if (_BundieValidationResults.ContainsKey(token))
-    {
-        var cpy = JsonSerializer.Deserialize<BungieValidationResult>(
-            JsonSerializer.Serialize(_BundieValidationResults[token]));
-        _BundieValidationResults.Remove(token);
-
-        return Results.Json(cpy);
-    }
-    else
-    {
-        return Results.Json(new BungieValidationResult());
-    }
-
-});
 
 // start the login process to use Official Bungie OAuth
 app.MapGet("/platform/bungie/login",  async (HttpRequest httpReq) =>
@@ -275,21 +244,7 @@ app.MapGet("/platform/bungie/validate", async (HttpRequest httpRequest) =>
     httpRequest.HttpContext.Session.SetInt32("Destiny.Clan", inClan ? 1 : 0);
     httpRequest.HttpContext.Session.SetInt32("Destiny.MembershipPlatform", membershipPlatform);
     httpRequest.HttpContext.Session.SetString("Destiny.DisplayName", membershipDisplayName);
-
-
-    if (_BundieValidationResults.ContainsKey(token))
-    {
-        _BundieValidationResults.Remove(token);
-    }
-
-    _BundieValidationResults.Add(token, new BungieValidationResult()
-    {
-        MembershipId = membershipId.ToString() ?? String.Empty,
-        InNetworkClan = inClan,
-        MembershipType = membershipPlatform,
-        DisplayName = membershipDisplayName,
-    });
-
+    
     var html =
         $"<!DOCTYPE html><html><head><title>Auth | Level Crush</title></head><body><p>Validated. You can close this window now.</p><script>window.close();</script></body><html>";
     
@@ -323,7 +278,7 @@ app.MapGet("/platform/discord/login", (HttpRequest httpReq) =>
     var discordState = hashResults;
     httpReq.HttpContext.Session.SetString("Discord.State", discordState);
 
-    var scopes = new string[] { "identify", "guilds" };
+    var scopes = new string[] { "identify", "guilds", "email" };
     
     var authorizeUrl =
         $"https://discord.com/api/oauth2/authorize?response_type=code&client_id={HttpUtility.UrlEncode(_DiscordConfig.ClientId)}&scope={String.Join('+', scopes)}&state={discordState}&redirect_uri={HttpUtility.UrlEncode(_DiscordConfig.RedirectUrl)}&prompt=none";
@@ -375,7 +330,7 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
         return Results.Text("Failed security checks. Bad Request");
     }
 
-    var scopes = new string[] { "identify", "guilds" };
+    var scopes = new string[] { "identify", "guilds", "email" };
 
     var req = new RestRequest("https://discord.com/api/oauth2/token");
     req.Method = Method.Post;
@@ -404,9 +359,12 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
     var userResponse = await DiscordClient.Get<DiscordUserResponse>("/users/@me", accessToken);
     var discordId = "";
     var discordHandle = "";
+    var discordEmail = "";
     if (userResponse != null)
     {
         discordId = userResponse.Id;
+        discordEmail = userResponse.Email;
+        
         
         // depending on the type of discord account this needs to be handled uniquely
         if (userResponse.Discriminator == "0")
@@ -452,14 +410,7 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
     httpRequest.HttpContext.Session.SetString("Discord.DiscordID", discordId);
     httpRequest.HttpContext.Session.SetInt32("Discord.InServer", inGuild ? 1 : 0);
     httpRequest.HttpContext.Session.SetString("Discord.DiscordHandle", discordHandle);
-
-
-    if (_DiscordValidationResults.ContainsKey(token))
-    {
-        _DiscordValidationResults.Remove(token);
-    }
-
-    _DiscordValidationResults.Add(token, varResult);
+    httpRequest.HttpContext.Session.SetString("Discord.Email", discordEmail);
     
     var html =
         $"<!DOCTYPE html><html><head><title>Auth | Level Crush</title></head><body><p>Validated. You can close this window now.</p><script>window.close();</script></body><html>";
@@ -491,37 +442,9 @@ app.MapGet("/platform/discord/logout", (HttpRequest httpRequest) =>
     httpRequest.HttpContext.Session.Remove("Discord.InServer");
     httpRequest.HttpContext.Session.Remove("Discord.DiscordHandle");
     httpRequest.HttpContext.Session.Remove("Discord.XToken");
+    httpRequest.HttpContext.Session.Remove("Discord.State");
+    httpRequest.HttpContext.Session.Remove("Discord.Email");
     return Results.Text("200 OK");
-});
-
-app.MapPost("/platform/discord/claim", async (HttpRequest httpRequest) =>
-{
-    var res = await httpRequest.ReadFromJsonAsync<Dictionary<string, string>>();
-    if (res == null)
-    {
-        return Results.Json(new DiscordValidationResult());
-    }
-    
-    res.TryGetValue("token", out var token);
-    
-    if (token == null)
-    {
-        return Results.Json(new DiscordValidationResult());
-    }
-
-    if (_DiscordValidationResults.ContainsKey(token))
-    {
-        var cpy = JsonSerializer.Deserialize<DiscordValidationResult>(
-            JsonSerializer.Serialize(_DiscordValidationResults[token]));
-        _DiscordValidationResults.Remove(token);
-
-        return Results.Json(cpy);
-    }
-    else
-    {
-        return Results.Json(new DiscordValidationResult());
-    }
-
 });
 
 app.Run();

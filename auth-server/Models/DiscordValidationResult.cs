@@ -12,4 +12,7 @@ public class DiscordValidationResult
 
     [JsonPropertyName("inServer")]
     public bool InServer { get; set; } = false;
+    
+    [JsonPropertyName("email")]
+    public string Email { get; set; } = string.Empty;
 }

@@ -10,6 +10,9 @@ public class DiscordUserResponse
     [JsonPropertyName("username")]
     public string Username { get; set; } = string.Empty;
     
+    [JsonPropertyName("email")]
+    public string Email { get; set; } = string.Empty;
+    
     [JsonPropertyName("discriminator")]
     public string Discriminator { get; set; } = string.Empty;
     
