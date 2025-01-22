@@ -408,8 +408,11 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
         var guildMemberResponse = await DiscordClient.Get<DiscordGuildMember>($"/users/@me/guilds/${guild}", accessToken);
         if (guildMemberResponse == null)
         {
+            LoggerGlobal.Write($"Failed to get information for {guild}");
             continue;
         }
+        
+        LoggerGlobal.Write($"{JsonSerializer.Serialize(guildMemberResponse)}");
         
         guildNicknames.Add(guild, guildMemberResponse.Nickname ?? discordHandle);
         
