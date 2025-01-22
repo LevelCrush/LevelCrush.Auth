@@ -12,4 +12,7 @@ public class DiscordGuild
     
     [JsonPropertyName("owner")]
     public bool Owner { get; set; } = false;
+
+    [JsonPropertyName("roles")] 
+    public string[] Roles { get; set; } = [];
 }

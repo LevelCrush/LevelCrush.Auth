@@ -1,4 +1,5 @@
-﻿using RestSharp;
+﻿using System.Net;
+using RestSharp;
 
 namespace auth_server;
 
@@ -17,18 +18,37 @@ public class DiscordClient
     public static async Task<T?> Get<T>(string endpoint, string accessToken) where T: class
     {
 
-        var req = new RestRequest($"https://discord.com/api/v10/{endpoint}");
-        
-        req.AddHeader("Authorization", "Bearer " + accessToken);
-        
-        var res = await Client.ExecuteAsync<T>(req);
-        if (res.IsSuccessful)
+        var maxAttempts = 10;
+        var attempt = 0;
+        do
         {
-            return res.Data;
-        }
-        else
-        {
-            return null;
-        }
+            var req = new RestRequest($"https://discord.com/api/v10/{endpoint}");
+        
+            req.AddHeader("Authorization", "Bearer " + accessToken);
+        
+            var res = await Client.ExecuteAsync<T>(req);
+            
+            if (res.StatusCode == HttpStatusCode.OK)
+            {
+                return res.Data;
+            } else if (res.StatusCode == HttpStatusCode.TooManyRequests && res.Headers != null)
+            {
+                var retryAfterString = res.Headers.Where(x => x.Name.ToLower() == "retry-after")
+                    .Select(x => x.Value)
+                    .FirstOrDefault();
+
+                var retryAfterSeconds = 0;
+                int.TryParse(retryAfterString, out retryAfterSeconds);
+                LoggerGlobal.Write($"Attempting to retry discord request after {retryAfterSeconds} seconds");
+                await Task.Delay(TimeSpan.FromSeconds(retryAfterSeconds));
+            }
+            else
+            {
+                break;
+            }
+            
+        } while (attempt++ < maxAttempts);
+
+        return null;
     }
 }

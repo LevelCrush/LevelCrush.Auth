@@ -278,7 +278,7 @@ app.MapGet("/platform/discord/login", (HttpRequest httpReq) =>
     var discordState = hashResults;
     httpReq.HttpContext.Session.SetString("Discord.State", discordState);
 
-    var scopes = new string[] { "identify", "guilds", "email" };
+    var scopes = new string[] { "identify", "guilds", "email", "guilds.members.read" };
     
     var authorizeUrl =
         $"https://discord.com/api/oauth2/authorize?response_type=code&client_id={HttpUtility.UrlEncode(_DiscordConfig.ClientId)}&scope={String.Join('+', scopes)}&state={discordState}&redirect_uri={HttpUtility.UrlEncode(_DiscordConfig.RedirectUrl)}&prompt=none";
@@ -330,7 +330,7 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
         return Results.Text("Failed security checks. Bad Request");
     }
 
-    var scopes = new string[] { "identify", "guilds", "email" };
+    var scopes = new string[] { "identify", "guilds", "email", "guilds.members.read" };
 
     var req = new RestRequest("https://discord.com/api/oauth2/token");
     req.Method = Method.Post;
@@ -400,13 +400,14 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
         inGuild = false;
     }
 
-    var varResult = new DiscordValidationResult()
+    foreach (var guild in _DiscordConfig.TargetServers)
     {
-        Handle = discordHandle,
-        Id = discordId,
-        InServer = inGuild
-    };
-    
+        var guildMemberResponse = await DiscordClient.Get<DiscordGuildMember[]>("/users/@me/guilds/${", accessToken);
+        
+    }
+
+
+
     httpRequest.HttpContext.Session.SetString("Discord.DiscordID", discordId);
     httpRequest.HttpContext.Session.SetInt32("Discord.InServer", inGuild ? 1 : 0);
     httpRequest.HttpContext.Session.SetString("Discord.DiscordHandle", discordHandle);

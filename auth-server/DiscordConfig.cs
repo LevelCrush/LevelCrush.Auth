@@ -20,6 +20,12 @@ public class DiscordConfig
     [DataMember] 
     public string[] TargetServers { get; set; } = [];
 
+    [DataMember]
+    public string[] AdminRoles { get; set; } = [];
+    
+    [DataMember]
+    public string[] ModeratorRoles { get; set; } = [];
+
     
     public static DiscordConfig Load()
     {
