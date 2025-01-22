@@ -15,4 +15,13 @@ public class DiscordValidationResult
     
     [JsonPropertyName("email")]
     public string Email { get; set; } = string.Empty;
+    
+    [JsonPropertyName("nicknames")] 
+    public string[] Nicknames { get; set; } = [];
+    
+    [JsonPropertyName("isAdmin")]
+    public bool IsAdmin { get; set; } = false;
+    
+    [JsonPropertyName("isModerator")]
+    public bool IsModerator { get; set; } = false;
 }

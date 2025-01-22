@@ -400,10 +400,32 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
         inGuild = false;
     }
 
+    var guildNicknames = new Dictionary<string, string>();
+    var isAdmin = false;
+    var isModerator = false;
     foreach (var guild in _DiscordConfig.TargetServers)
     {
-        var guildMemberResponse = await DiscordClient.Get<DiscordGuildMember[]>("/users/@me/guilds/${", accessToken);
+        var guildMemberResponse = await DiscordClient.Get<DiscordGuildMember>($"/users/@me/guilds/${guild}", accessToken);
+        if (guildMemberResponse == null)
+        {
+            continue;
+        }
         
+        guildNicknames.Add(guild, guildMemberResponse.Nickname ?? discordHandle);
+        
+        foreach (var role in guildMemberResponse.Roles)
+        {
+            if (_DiscordConfig.AdminRoles.Contains(role))
+            {
+                isAdmin = true;
+            }
+
+            if (_DiscordConfig.ModeratorRoles.Contains(role))
+            {
+                isModerator = true;
+            }
+        }
+            
     }
 
 
@@ -412,6 +434,13 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
     httpRequest.HttpContext.Session.SetInt32("Discord.InServer", inGuild ? 1 : 0);
     httpRequest.HttpContext.Session.SetString("Discord.DiscordHandle", discordHandle);
     httpRequest.HttpContext.Session.SetString("Discord.Email", discordEmail);
+    httpRequest.HttpContext.Session.SetInt32($"Discord.IsAdmin", isAdmin ? 1 : 0);
+    httpRequest.HttpContext.Session.SetInt32($"Discord.IsModerator", isModerator ? 1 : 0);
+    foreach (var (guild, nickname) in guildNicknames)
+    {
+        httpRequest.HttpContext.Session.SetString($"Discord.Guild.{guild}.Nickname", nickname);
+    }
+    
     
     var html =
         $"<!DOCTYPE html><html><head><title>Auth | Level Crush</title></head><body><p>Validated. You can close this window now.</p><script>window.close();</script></body><html>";
@@ -428,24 +457,36 @@ app.MapGet("/platform/discord/session", (HttpRequest httpRequest) =>
     var inServer = httpRequest.HttpContext.Session.GetInt32("Discord.InServer") == 1 ? true : false;
     var discordHandle =  httpRequest.HttpContext.Session.GetString("Discord.DiscordHandle");
     var discordEmail =  httpRequest.HttpContext.Session.GetString("Discord.Email");
+    var isAdmin = httpRequest.HttpContext.Session.GetInt32("Discord.IsAdmin") == 1 ? true : false;
+    var isModerator = httpRequest.HttpContext.Session.GetInt32("Discord.IsModerator") == 1 ? true : false;
+
+    var nicknames = new List<string>();
+    var nicknameKeys = httpRequest.HttpContext.Session.Keys.Where((x) => x.StartsWith("Discord.Guild.") && x.EndsWith("Nickname"));
+    foreach (var key  in nicknameKeys)
+    {
+        nicknames.Add(httpRequest.HttpContext.Session.GetString(key) ?? "@Unknown");
+    }
+    
     return Results.Json(new DiscordValidationResult()
     {
         Id = discordId ?? "",
         InServer = inServer,
         Handle = discordHandle ?? "",
-        Email = discordEmail ?? ""
+        Email = discordEmail ?? "",
+        IsAdmin = isAdmin,
+        IsModerator = isModerator,
+        Nicknames = nicknames.ToArray(),
     });
 
 });
 
 app.MapGet("/platform/discord/logout", (HttpRequest httpRequest) =>
 {
-    httpRequest.HttpContext.Session.Remove("Discord.DiscordID");
-    httpRequest.HttpContext.Session.Remove("Discord.InServer");
-    httpRequest.HttpContext.Session.Remove("Discord.DiscordHandle");
-    httpRequest.HttpContext.Session.Remove("Discord.XToken");
-    httpRequest.HttpContext.Session.Remove("Discord.State");
-    httpRequest.HttpContext.Session.Remove("Discord.Email");
+    var discordKeys = httpRequest.HttpContext.Session.Keys.Where((x) => x.Contains("Discord."));
+    foreach (var discordKey in discordKeys)
+    {
+        httpRequest.HttpContext.Session.Remove(discordKey);
+    }
     return Results.Text("200 OK");
 });
 

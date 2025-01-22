@@ -8,7 +8,7 @@ public class DiscordGuildMember
     public DiscordUserResponse? User { get; set; } 
     
     [JsonPropertyName("nick")]
-    public string Nickname { get; set; } = string.Empty;
+    public string? Nickname { get; set; }
     
     [JsonPropertyName("avatar")]
     public string Avatar { get; set; } = string.Empty;
