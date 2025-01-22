@@ -360,6 +360,7 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
     var discordId = "";
     var discordHandle = "";
     var discordEmail = "";
+    var discordGlobalName = "";
     if (userResponse != null)
     {
         discordId = userResponse.Id;
@@ -370,6 +371,7 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
         if (userResponse.Discriminator == "0")
         {
             discordHandle = userResponse.Username;
+            discordGlobalName = userResponse.GlobalName;
         }
         else
         {
@@ -405,15 +407,15 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
     var isModerator = false;
     foreach (var guild in _DiscordConfig.TargetServers)
     {
-        var guildMemberResponse = await DiscordClient.Get<DiscordGuildMember>($"/users/@me/guilds/${guild}", accessToken);
+        var guildMemberResponse = await DiscordClient.Get<DiscordGuildMember>($"/users/@me/guilds/{guild}/member", accessToken);
         if (guildMemberResponse == null)
         {
-            LoggerGlobal.Write($"Failed to get information for {guild}");
+            LoggerGlobal.Write($"Failed to get information for {guild}", LogLevel.Error);
+            LoggerGlobal.Write($"{JsonSerializer.Serialize(guildMemberResponse)}", LogLevel.Error);
             continue;
         }
         
-        LoggerGlobal.Write($"{JsonSerializer.Serialize(guildMemberResponse)}");
-        
+     
         guildNicknames.Add(guild, guildMemberResponse.Nickname ?? discordHandle);
         
         foreach (var role in guildMemberResponse.Roles)
@@ -432,7 +434,8 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
     }
 
 
-
+    
+    httpRequest.HttpContext.Session.SetString("Discord.GlobalName", discordGlobalName);
     httpRequest.HttpContext.Session.SetString("Discord.DiscordID", discordId);
     httpRequest.HttpContext.Session.SetInt32("Discord.InServer", inGuild ? 1 : 0);
     httpRequest.HttpContext.Session.SetString("Discord.DiscordHandle", discordHandle);
@@ -462,6 +465,7 @@ app.MapGet("/platform/discord/session", (HttpRequest httpRequest) =>
     var discordEmail =  httpRequest.HttpContext.Session.GetString("Discord.Email");
     var isAdmin = httpRequest.HttpContext.Session.GetInt32("Discord.IsAdmin") == 1 ? true : false;
     var isModerator = httpRequest.HttpContext.Session.GetInt32("Discord.IsModerator") == 1 ? true : false;
+    var globalName = httpRequest.HttpContext.Session.GetString("Discord.GlobalName");
 
     var nicknames = new List<string>();
     var nicknameKeys = httpRequest.HttpContext.Session.Keys.Where((x) => x.StartsWith("Discord.Guild.") && x.EndsWith("Nickname"));
@@ -479,6 +483,7 @@ app.MapGet("/platform/discord/session", (HttpRequest httpRequest) =>
         IsAdmin = isAdmin,
         IsModerator = isModerator,
         Nicknames = nicknames.ToArray(),
+        GlobalName = globalName ?? ""
     });
 
 });

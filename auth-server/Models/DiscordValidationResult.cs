@@ -7,6 +7,9 @@ public class DiscordValidationResult
     [JsonPropertyName("discordHandle")]
     public string Handle { get; set; } = string.Empty;
 
+    [JsonPropertyName("globalName")]
+    public string GlobalName { get; set; } = string.Empty;
+
     [JsonPropertyName("discordId")]
     public string Id { get; set; } = string.Empty;
 
