@@ -426,12 +426,13 @@ app.MapGet("/platform/discord/session", (HttpRequest httpRequest) =>
     var discordId = httpRequest.HttpContext.Session.GetString("Discord.DiscordID");
     var inServer = httpRequest.HttpContext.Session.GetInt32("Discord.InServer") == 1 ? true : false;
     var discordHandle =  httpRequest.HttpContext.Session.GetString("Discord.DiscordHandle");
-
+    var discordEmail =  httpRequest.HttpContext.Session.GetString("Discord.Email");
     return Results.Json(new DiscordValidationResult()
     {
         Id = discordId ?? "",
         InServer = inServer,
-        Handle = discordHandle ?? ""
+        Handle = discordHandle ?? "",
+        Email = discordEmail ?? ""
     });
 
 });
