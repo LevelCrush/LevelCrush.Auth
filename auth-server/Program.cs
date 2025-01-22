@@ -416,7 +416,7 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
         }
         
      
-        guildNicknames.Add(guild, guildMemberResponse.Nickname ?? discordHandle);
+        guildNicknames.Add(guild, guildMemberResponse.Nickname ?? discordGlobalName);
         
         foreach (var role in guildMemberResponse.Roles)
         {
