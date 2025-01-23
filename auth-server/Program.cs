@@ -20,6 +20,9 @@ BungieClient.ApiKey = _DestinyConfig.ApiKey;
 // load discord configuration
 var _DiscordConfig = DiscordConfig.Load();
 
+var _DiscordValidationResults = new Dictionary<string, (DiscordValidationResult,long)>();
+var _BungieValidationResults = new Dictionary<string, (BungieValidationResult, long)>();
+
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
 {
@@ -67,6 +70,31 @@ app.UseCors();
 
 
 // Start Bungie Linking
+
+app.MapPost("/platform/bungie/claim", async (HttpRequest httpRequest) =>
+{
+    var res = await httpRequest.ReadFromJsonAsync<Dictionary<string, string>>();
+    if (res == null)
+    {
+        return Results.Json(new BungieValidationResult());
+    }
+    res.TryGetValue("token", out var token);
+    if (token == null)
+    {
+        return Results.Json(new BungieValidationResult());
+    }
+    if (_BungieValidationResults.ContainsKey(token))
+    {
+        var cpy = JsonSerializer.Deserialize<BungieValidationResult>(
+            JsonSerializer.Serialize(_BungieValidationResults[token].Item1));
+        _BungieValidationResults.Remove(token);
+        return Results.Json(cpy);
+    }
+    else
+    {
+        return Results.Json(new BungieValidationResult());
+    }
+});
 
 // remove all bungie/destiny related keys
 app.MapGet("/platform/bungie/logout", (HttpRequest httpRequest) =>
@@ -245,6 +273,19 @@ app.MapGet("/platform/bungie/validate", async (HttpRequest httpRequest) =>
     httpRequest.HttpContext.Session.SetInt32("Destiny.MembershipPlatform", membershipPlatform);
     httpRequest.HttpContext.Session.SetString("Destiny.DisplayName", membershipDisplayName);
     
+    if (_BungieValidationResults.ContainsKey(token))
+    {
+        _BungieValidationResults.Remove(token);
+    }
+
+    _BungieValidationResults.Add(token, (new BungieValidationResult()
+    {
+        MembershipId = membershipId.ToString() ?? String.Empty,
+        InNetworkClan = inClan,
+        MembershipType = membershipPlatform,
+        DisplayName = membershipDisplayName,
+    }, DateTimeOffset.UtcNow.ToUnixTimeSeconds()));
+    
     var html =
         $"<!DOCTYPE html><html><head><title>Auth | Level Crush</title></head><body><p>Validated. You can close this window now.</p><script>window.close();</script></body><html>";
     
@@ -270,6 +311,14 @@ app.MapGet("/platform/discord/login", (HttpRequest httpReq) =>
         token = "";
     }
     
+    httpReq.Query.TryGetValue("redirectUrl", out var redirectValues);
+    var redirect = redirectValues.FirstOrDefault();
+    if (redirect == null)
+    {
+        redirect = "";
+    }
+
+    httpReq.HttpContext.Session.SetString("Discord.RedirectUrl", redirect);
     httpReq.HttpContext.Session.SetString("Discord.XToken", token);
     var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     
@@ -442,19 +491,85 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
     httpRequest.HttpContext.Session.SetString("Discord.Email", discordEmail);
     httpRequest.HttpContext.Session.SetInt32($"Discord.IsAdmin", isAdmin ? 1 : 0);
     httpRequest.HttpContext.Session.SetInt32($"Discord.IsModerator", isModerator ? 1 : 0);
+
+    var nicknames = new List<string>();
     foreach (var (guild, nickname) in guildNicknames)
     {
         httpRequest.HttpContext.Session.SetString($"Discord.Guild.{guild}.Nickname", nickname);
+        nicknames.Add(nickname);
     }
-    
-    
-    var html =
-        $"<!DOCTYPE html><html><head><title>Auth | Level Crush</title></head><body><p>Validated. You can close this window now.</p><script>window.close();</script></body><html>";
-    
-    httpRequest.HttpContext.Response.ContentType = "text/html";
-    httpRequest.HttpContext.Response.ContentLength = Encoding.UTF8.GetByteCount(html);
 
-    return Results.Content(html);
+    if (_DiscordValidationResults.ContainsKey(token))
+    {
+        _DiscordValidationResults.Remove(token);
+    }
+        
+    var discordValidationResult = new DiscordValidationResult()
+    {
+        Id = discordId ?? "",
+        InServer = inGuild,
+        Handle = discordHandle ?? "",
+        Email = discordEmail ?? "",
+        IsAdmin = isAdmin,
+        IsModerator = isModerator,
+        Nicknames = nicknames.ToArray(),
+        GlobalName = discordGlobalName ?? ""
+    };
+
+    _DiscordValidationResults.Add(token, (discordValidationResult, DateTimeOffset.UtcNow.ToUnixTimeSeconds()));
+    
+    var currentRedirect = httpRequest.HttpContext.Session.GetString("Discord.RedirectUrl");
+    if (currentRedirect != null && currentRedirect.Trim().Length > 0)
+    {
+        return Results.Redirect(currentRedirect, false, false);
+    }
+    else
+    {
+
+        var html =
+            $"<!DOCTYPE html><html><head><title>Auth | Level Crush</title></head><body><p>Validated. You can close this window now.</p><script>window.close();</script></body><html>";
+
+        httpRequest.HttpContext.Response.ContentType = "text/html";
+        httpRequest.HttpContext.Response.ContentLength = Encoding.UTF8.GetByteCount(html);
+
+        return Results.Content(html);
+    }
+});
+
+app.MapPost("/platform/discord/claim", async (HttpRequest httpRequest) =>
+{
+
+    string token = "";
+    try
+    {
+        var res = await httpRequest.ReadFromJsonAsync<Dictionary<string, string>>();
+        if (res == null)
+        {
+            return Results.Json(new DiscordValidationResult());
+        }
+
+        res.TryGetValue("token", out token);
+    }
+    catch (Exception ex)
+    {
+        token = null;
+    }
+
+    if (token == null || token.Length == 0)
+    {
+        return Results.Json(new DiscordValidationResult());
+    }
+    if (_DiscordValidationResults.ContainsKey(token))
+    {
+        var cpy = JsonSerializer.Deserialize<DiscordValidationResult>(
+            JsonSerializer.Serialize(_DiscordValidationResults[token].Item1));
+        _DiscordValidationResults.Remove(token);
+        return Results.Json(cpy);
+    }
+    else
+    {
+        return Results.Json(new DiscordValidationResult());
+    }
 });
 
 app.MapGet("/platform/discord/session", (HttpRequest httpRequest) =>
