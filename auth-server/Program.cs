@@ -70,7 +70,6 @@ app.UseCors();
 
 
 // Start Bungie Linking
-
 app.MapPost("/platform/bungie/claim", async (HttpRequest httpRequest) =>
 {
     var res = await httpRequest.ReadFromJsonAsync<Dictionary<string, string>>();
@@ -317,7 +316,15 @@ app.MapGet("/platform/discord/login", (HttpRequest httpReq) =>
     {
         redirect = "";
     }
+    
+    httpReq.Query.TryGetValue("userRedirect", out var userRedirectValues);
+    var userRedirect = userRedirectValues.FirstOrDefault();
+    if (userRedirect == null)
+    {
+        userRedirect = "";
+    }
 
+    httpReq.HttpContext.Session.SetString("Discord.UserRedirect", userRedirect);
     httpReq.HttpContext.Session.SetString("Discord.RedirectUrl", redirect);
     httpReq.HttpContext.Session.SetString("Discord.XToken", token);
     var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -415,6 +422,8 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
         discordId = userResponse.Id;
         discordEmail = userResponse.Email;
         
+        LoggerGlobal.Write($"JSON: {JsonSerializer.Serialize(userResponse)}");
+        
         
         // depending on the type of discord account this needs to be handled uniquely
         if (userResponse.Discriminator == "0")
@@ -454,6 +463,8 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
     var guildNicknames = new Dictionary<string, string>();
     var isAdmin = false;
     var isModerator = false;
+    var isRetired = false;
+    var isBooster = false;
     foreach (var guild in _DiscordConfig.TargetServers)
     {
         var guildMemberResponse = await DiscordClient.Get<DiscordGuildMember>($"/users/@me/guilds/{guild}/member", accessToken);
@@ -464,9 +475,13 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
             continue;
         }
         
-     
         guildNicknames.Add(guild, guildMemberResponse.Nickname ?? discordGlobalName);
-        
+
+        if (guildMemberResponse.PremiumSince != null)
+        {
+            isBooster = true;
+        }
+
         foreach (var role in guildMemberResponse.Roles)
         {
             if (_DiscordConfig.AdminRoles.Contains(role))
@@ -478,12 +493,18 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
             {
                 isModerator = true;
             }
+
+            if (_DiscordConfig.RetiredRoles.Contains(role))
+            {
+                isRetired = true;
+            }
         }
             
     }
 
 
     
+    LoggerGlobal.Write($"Writing ${discordEmail} into session result");
     httpRequest.HttpContext.Session.SetString("Discord.GlobalName", discordGlobalName);
     httpRequest.HttpContext.Session.SetString("Discord.DiscordID", discordId);
     httpRequest.HttpContext.Session.SetInt32("Discord.InServer", inGuild ? 1 : 0);
@@ -491,6 +512,12 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
     httpRequest.HttpContext.Session.SetString("Discord.Email", discordEmail);
     httpRequest.HttpContext.Session.SetInt32($"Discord.IsAdmin", isAdmin ? 1 : 0);
     httpRequest.HttpContext.Session.SetInt32($"Discord.IsModerator", isModerator ? 1 : 0);
+    httpRequest.HttpContext.Session.SetInt32($"Discord.IsBooster", isBooster ? 1 : 0);
+    httpRequest.HttpContext.Session.SetInt32($"Discord.IsRetired", isRetired ? 1 : 0);
+
+    LoggerGlobal.Write("Forcing a write");
+    await httpRequest.HttpContext.Session.CommitAsync();
+    
 
     var nicknames = new List<string>();
     foreach (var (guild, nickname) in guildNicknames)
@@ -503,7 +530,9 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
     {
         _DiscordValidationResults.Remove(token);
     }
-        
+
+    LoggerGlobal.Write($"Writing ${discordEmail} into validation result");
+    
     var discordValidationResult = new DiscordValidationResult()
     {
         Id = discordId ?? "",
@@ -513,7 +542,9 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
         IsAdmin = isAdmin,
         IsModerator = isModerator,
         Nicknames = nicknames.ToArray(),
-        GlobalName = discordGlobalName ?? ""
+        GlobalName = discordGlobalName ?? "",
+        IsRetired = isRetired,
+        IsBooster = isBooster
     };
 
     _DiscordValidationResults.Add(token, (discordValidationResult, DateTimeOffset.UtcNow.ToUnixTimeSeconds()));
@@ -581,6 +612,9 @@ app.MapGet("/platform/discord/session", (HttpRequest httpRequest) =>
     var isAdmin = httpRequest.HttpContext.Session.GetInt32("Discord.IsAdmin") == 1 ? true : false;
     var isModerator = httpRequest.HttpContext.Session.GetInt32("Discord.IsModerator") == 1 ? true : false;
     var globalName = httpRequest.HttpContext.Session.GetString("Discord.GlobalName");
+    var isRetired = httpRequest.HttpContext.Session.GetInt32("Discord.IsRetired") == 1 ? true : false;
+    var isBooster = httpRequest.HttpContext.Session.GetInt32("Discord.IsBooster") == 1 ? true : false;
+    var userRedirect = httpRequest.HttpContext.Session.GetString("Discord.UserRedirect");
 
     var nicknames = new List<string>();
     var nicknameKeys = httpRequest.HttpContext.Session.Keys.Where((x) => x.StartsWith("Discord.Guild.") && x.EndsWith("Nickname"));
@@ -588,6 +622,8 @@ app.MapGet("/platform/discord/session", (HttpRequest httpRequest) =>
     {
         nicknames.Add(httpRequest.HttpContext.Session.GetString(key) ?? "@Unknown");
     }
+    
+    LoggerGlobal.Write($"Retrieved {discordEmail} from session");
     
     return Results.Json(new DiscordValidationResult()
     {
@@ -598,7 +634,10 @@ app.MapGet("/platform/discord/session", (HttpRequest httpRequest) =>
         IsAdmin = isAdmin,
         IsModerator = isModerator,
         Nicknames = nicknames.ToArray(),
-        GlobalName = globalName ?? ""
+        GlobalName = globalName ?? "",
+        IsRetired = isRetired,
+        IsBooster = isBooster,
+        UserRedirect = userRedirect ?? ""
     });
 
 });

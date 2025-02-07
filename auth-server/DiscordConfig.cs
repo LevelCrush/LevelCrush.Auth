@@ -25,6 +25,10 @@ public class DiscordConfig
     
     [DataMember]
     public string[] ModeratorRoles { get; set; } = [];
+    
+    [DataMember]
+    public string[] RetiredRoles { get; set; } = [];
+    
 
     
     public static DiscordConfig Load()

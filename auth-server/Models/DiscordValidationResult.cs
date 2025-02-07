@@ -27,4 +27,13 @@ public class DiscordValidationResult
     
     [JsonPropertyName("isModerator")]
     public bool IsModerator { get; set; } = false;
+    
+    [JsonPropertyName("isBooster")]
+    public bool IsBooster { get; set; } = false;
+    
+    [JsonPropertyName("isRetired")]
+    public bool IsRetired { get; set; } = false;
+    
+    [JsonPropertyName("userRedirect")]
+    public string UserRedirect { get; set; } = "";
 }
