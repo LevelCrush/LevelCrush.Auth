@@ -227,9 +227,12 @@ app.MapGet("/platform/bungie/validate", async (HttpRequest httpRequest) =>
     var membershipDisplayName = "";
     if (doProcess)
     {
-        var userReq = await BungieClient.Get($"/User/GetMembershipsById/{response.Data.MembershipId}/-1/")
-            .Send<BungieMembershipData>();
+       // var userReq = await BungieClient.Get($"/User/GetMembershipsById/{response.Data.MembershipId}/-1/")
+       //     .Send<BungieMembershipData>();
 
+        var dReq = await DestinyMember.MembershipById(response.Data.MembershipId);
+        
+        /*
         if (userReq.Response != null)
         {
             membershipId = userReq.Response.PrimaryMembershipId;
@@ -243,6 +246,12 @@ app.MapGet("/platform/bungie/validate", async (HttpRequest httpRequest) =>
                     break;
                 }
             } 
+        } */
+        if (dReq != null)
+        {
+            membershipId = dReq.MembershipId;
+            membershipDisplayName = $"{dReq.GlobalDisplayName}#{dReq.GlobalDisplayNameCode.ToString().PadLeft(4, '0')}";
+            membershipPlatform = (int)dReq.MembershipType;
         }
         else
         {
