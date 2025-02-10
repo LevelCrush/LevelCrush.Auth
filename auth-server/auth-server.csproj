@@ -18,7 +18,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <PackageReference Include="lib-destiny" Version="1.1.1" />
+      <PackageReference Include="levelcrush-destiny" Version="1.1.2" />
       <PackageReference Include="NReco.Logging.File" Version="1.2.2" />
     </ItemGroup>
 
