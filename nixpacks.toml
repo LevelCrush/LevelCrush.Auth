@@ -23,4 +23,4 @@ nixOverlays = []
 nixpkgsArchive = "3bacccdd76f271adab1f53fe447c8dc9a95c2d76"
 
 [start]
-cmd = './app/auth-server.bin/Release/net8.0/auth-server' 
+cmd = './auth-server.bin/Release/net8.0/auth-server' 
