@@ -11,7 +11,7 @@ nixpkgsArchive = "3bacccdd76f271adab1f53fe447c8dc9a95c2d76"
 
 [phases.build]
 dependsOn = ['install']
-cmds = ['dotnet publish --no-restore -c Release -o {}']
+cmds = ['dotnet build --configuration "Release"']
 
 [phases.install]
 dependsOn = ['setup']
@@ -23,4 +23,4 @@ nixOverlays = []
 nixpkgsArchive = "3bacccdd76f271adab1f53fe447c8dc9a95c2d76"
 
 [start]
-cmd = './out' 
+cmd = './app/auth-server.bin/Release/net8.0/auth-server' 
