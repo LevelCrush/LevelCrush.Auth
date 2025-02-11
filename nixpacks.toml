@@ -16,7 +16,7 @@ Discord__ModeratorRoles='[]'
 Discord__RedirectUrl=''
 Discord__TargetServers='[]'
 Logging__LogLevel__Default='Information'
-Logging__LogLevel__Microsoft.AspNetCore='Warning'
+Logging__LogLevel__Microsoft__AspNetCore='Warning'
 
 [phase.name]
 nixpkgsArchive = "a45fa362d887f4d4a7157d95c28ca9ce2899b70e"
