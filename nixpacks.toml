@@ -11,7 +11,7 @@ nixpkgsArchive = "a45fa362d887f4d4a7157d95c28ca9ce2899b70e"
 
 [phases.build]
 dependsOn = ['install']
-cmds = ['dotnet publish --no-restore -c Release -o {}']
+cmds = ['dotnet publish --no-restore -c Release -o ./out']
 
 [phases.install]
 dependsOn = ['setup']
