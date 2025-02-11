@@ -6,7 +6,7 @@ NIXPACKS_CSHARP_SDK_VERSION = '8'
 NIXPACKS_METADATA = 'c#'
 
 [phase.name]
-nixpkgsArchive = "3bacccdd76f271adab1f53fe447c8dc9a95c2d76"
+nixpkgsArchive = "a45fa362d887f4d4a7157d95c28ca9ce2899b70e"
 
 
 [phases.build]
@@ -18,9 +18,9 @@ dependsOn = ['setup']
 cmds = ['dotnet restore']
 
 [phases.setup]
-nixPkgs = ['dotnet-sdk_8']
+nixPkgs = ['dotnet-sdk']
 nixOverlays = []
-nixpkgsArchive = "3bacccdd76f271adab1f53fe447c8dc9a95c2d76"
+nixpkgsArchive = "a45fa362d887f4d4a7157d95c28ca9ce2899b70e"
 
 [start]
 cmd = './auth-server/bin/Release/net8.0/auth-server' 
