@@ -1,2 +1,27 @@
+[variables]
+ASPNETCORE_ENVIRONMENT = 'Production'
+ASPNETCORE_URLS = 'http://0.0.0.0:3000'
+DOTNET_ROOT = '/nix/var/nix/profiles/default/'
+NIXPACKS_CSHARP_SDK_VERSION = '8'
+NIXPACKS_METADATA = 'c#'
+
 [phase.name]
-    nixpkgsArchive = "3bacccdd76f271adab1f53fe447c8dc9a95c2d76"
+nixpkgsArchive = "3bacccdd76f271adab1f53fe447c8dc9a95c2d76"
+
+[phases.build]
+dependsOn = ['install']
+cmds = ['dotnet publish --no-restore -c Release -o {}']
+
+[phases.install]
+dependsOn = ['setup']
+cmds = ['dotnet restore']
+
+[phases.setup]
+nixPkgs = ['dotnet-sdk_8']
+nixOverlays = []
+nixpkgsArchive = '5148520bfab61f99fd25fb9ff7bfbb50dad3c9db'
+
+[start]
+cmd = './out'
+
+
