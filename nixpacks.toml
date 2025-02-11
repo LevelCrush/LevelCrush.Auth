@@ -4,6 +4,19 @@ ASPNETCORE_URLS = 'http://0.0.0.0:3000'
 DOTNET_ROOT = '/nix/var/nix/profiles/default/'
 NIXPACKS_CSHARP_SDK_VERSION = '8'
 NIXPACKS_METADATA = 'c#'
+Destiny__ApiKey=""
+Destiny__ClientID=""
+Destiny__ClientSecret=""
+Destiny__NetworkClans=[]
+Discord__AdminRoles=[]
+Discord__BotToken=""
+Discord__ClientID=""
+Discord__ClientSecret=""
+Discord__ModeratorRoles=[]
+Discord__RedirectUrl=""
+Discord__TargetServers=[]
+Logging__LogLevel__Default=""
+Logging__LogLevel__Microsoft.AspNetCore="Warning"
 
 [phase.name]
 nixpkgsArchive = "a45fa362d887f4d4a7157d95c28ca9ce2899b70e"
