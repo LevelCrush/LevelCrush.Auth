@@ -431,9 +431,6 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
         discordId = userResponse.Id;
         discordEmail = userResponse.Email;
         
-        LoggerGlobal.Write($"JSON: {JsonSerializer.Serialize(userResponse)}");
-        
-        
         // depending on the type of discord account this needs to be handled uniquely
         if (userResponse.Discriminator == "0")
         {

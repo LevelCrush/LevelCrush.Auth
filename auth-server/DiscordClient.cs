@@ -30,6 +30,8 @@ public class DiscordClient
             
             if (res.StatusCode == HttpStatusCode.OK)
             {
+                // force throttle all request. Before returning any data. Throttle by one second. 
+                await Task.Delay(TimeSpan.FromSeconds(1));
                 return res.Data;
             } else if (res.StatusCode == HttpStatusCode.TooManyRequests && res.Headers != null)
             {
