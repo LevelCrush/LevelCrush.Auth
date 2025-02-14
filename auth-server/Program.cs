@@ -311,7 +311,7 @@ app.MapGet("/platform/bungie/validate", async (HttpRequest httpRequest) =>
 
 app.MapGet("/platform/discord/login", (HttpRequest httpReq) =>
 {
-
+    LoggerGlobal.Write("Starting Discord Login");
     httpReq.Query.TryGetValue("token", out var tokenValues);
     var token = tokenValues.FirstOrDefault();
     if (token == null)
@@ -352,6 +352,7 @@ app.MapGet("/platform/discord/login", (HttpRequest httpReq) =>
 
 app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
 {
+    LoggerGlobal.Write("Validating Discord Session");
     httpRequest.Query.TryGetValue("code", out var oauthCodeValues);
     httpRequest.Query.TryGetValue("error", out var oauthErrorValues);
     httpRequest.Query.TryGetValue("state", out var oauthStateValues);
@@ -571,7 +572,7 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
 
 app.MapPost("/platform/discord/claim", async (HttpRequest httpRequest) =>
 {
-
+    LoggerGlobal.Write("Claiming Discord Profile");
     string token = "";
     try
     {
@@ -607,6 +608,7 @@ app.MapPost("/platform/discord/claim", async (HttpRequest httpRequest) =>
 
 app.MapGet("/platform/discord/session", (HttpRequest httpRequest) =>
 {
+    LoggerGlobal.Write("Getting Discord Profile form Session");
     var discordId = httpRequest.HttpContext.Session.GetString("Discord.DiscordID");
     var inServer = httpRequest.HttpContext.Session.GetInt32("Discord.InServer") == 1 ? true : false;
     var discordHandle =  httpRequest.HttpContext.Session.GetString("Discord.DiscordHandle");
@@ -624,8 +626,6 @@ app.MapGet("/platform/discord/session", (HttpRequest httpRequest) =>
     {
         nicknames.Add(httpRequest.HttpContext.Session.GetString(key) ?? "@Unknown");
     }
-    
-    LoggerGlobal.Write($"Retrieved {discordEmail} from session");
     
     return Results.Json(new DiscordValidationResult()
     {
@@ -646,6 +646,7 @@ app.MapGet("/platform/discord/session", (HttpRequest httpRequest) =>
 
 app.MapGet("/platform/discord/logout", (HttpRequest httpRequest) =>
 {
+    LoggerGlobal.Write("Logging out from Discord Profile");
     var discordKeys = httpRequest.HttpContext.Session.Keys.Where((x) => x.Contains("Discord."));
     foreach (var discordKey in discordKeys)
     {
