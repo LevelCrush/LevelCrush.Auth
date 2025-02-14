@@ -510,10 +510,7 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
         }
             
     }
-
-
     
-    LoggerGlobal.Write($"Writing ${discordEmail} into session result");
     httpRequest.HttpContext.Session.SetString("Discord.GlobalName", discordGlobalName);
     httpRequest.HttpContext.Session.SetString("Discord.DiscordID", discordId);
     httpRequest.HttpContext.Session.SetInt32("Discord.InServer", inGuild ? 1 : 0);
@@ -539,8 +536,7 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
     {
         _DiscordValidationResults.Remove(token);
     }
-
-    LoggerGlobal.Write($"Writing ${discordEmail} into validation result");
+    
     
     var discordValidationResult = new DiscordValidationResult()
     {
