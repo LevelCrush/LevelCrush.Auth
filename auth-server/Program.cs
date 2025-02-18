@@ -68,6 +68,24 @@ app.UseSession();
 app.UseCors();
 
 
+app.MapGet("/logout", async (HttpRequest httpRequest) =>
+{
+    LoggerGlobal.Write("Forcing logout");
+    httpRequest.HttpContext.Session.Clear();
+    await httpRequest.HttpContext.Session.CommitAsync();
+    
+    // clear cookies
+    foreach (var cookie in httpRequest.Cookies.Keys)
+    {
+        httpRequest.HttpContext.Response.Cookies.Delete(cookie);
+    }
+    
+    LoggerGlobal.Write("Done clearing cookies");
+    
+    return Results.Text("200 OK");
+});
+
+
 
 // Start Bungie Linking
 app.MapPost("/platform/bungie/claim", async (HttpRequest httpRequest) =>
@@ -96,14 +114,18 @@ app.MapPost("/platform/bungie/claim", async (HttpRequest httpRequest) =>
 });
 
 // remove all bungie/destiny related keys
-app.MapGet("/platform/bungie/logout", (HttpRequest httpRequest) =>
+app.MapGet("/platform/bungie/logout", async (HttpRequest httpRequest) =>
 {
     httpRequest.HttpContext.Session.Remove("Destiny.MembershipID");
     httpRequest.HttpContext.Session.Remove("Destiny.Clan");
     httpRequest.HttpContext.Session.Remove("Destiny.MembershipPlatform");
     httpRequest.HttpContext.Session.Remove("Destiny.DisplayName");
     httpRequest.HttpContext.Session.Remove("BungieState");
+    
+    LoggerGlobal.Write("Forcing a write after clearing the bungie session");
+    await httpRequest.HttpContext.Session.CommitAsync();
 
+    
     return Results.Text("200 OK");
 });
 
@@ -146,6 +168,10 @@ app.MapGet("/platform/bungie/login",  async (HttpRequest httpReq) =>
     var bungieState = hashResults;
     httpReq.HttpContext.Session.SetString("BungieState", bungieState);
     
+    LoggerGlobal.Write("Forcing session write before bungie login starts");
+    await httpReq.HttpContext.Session.CommitAsync();
+    
+        
     var authorizeUrl =
         $"https://www.bungie.net/en/OAuth/Authorize?response_type=code&client_id={HttpUtility.UrlEncode(_DestinyConfig.ClientId)}&state={bungieState}&prompt=prompt";
     return Results.Redirect(authorizeUrl, false, false);
@@ -232,21 +258,6 @@ app.MapGet("/platform/bungie/validate", async (HttpRequest httpRequest) =>
 
         var dReq = await DestinyMember.MembershipById(response.Data.MembershipId);
         
-        /*
-        if (userReq.Response != null)
-        {
-            membershipId = userReq.Response.PrimaryMembershipId;
-            membershipDisplayName = userReq.Response.NetUser.UniqueName; // this is the Bungie Global Display Name with code. Dont get confused by the fields.
-
-            foreach (var profileMembership in userReq.Response.Memberships)
-            {
-                if (profileMembership.MembershipId == membershipId)
-                {
-                    membershipPlatform = profileMembership.MembershipType;
-                    break;
-                }
-            } 
-        } */
         if (dReq != null)
         {
             membershipId = dReq.MembershipId;
@@ -281,6 +292,9 @@ app.MapGet("/platform/bungie/validate", async (HttpRequest httpRequest) =>
     httpRequest.HttpContext.Session.SetInt32("Destiny.MembershipPlatform", membershipPlatform);
     httpRequest.HttpContext.Session.SetString("Destiny.DisplayName", membershipDisplayName);
     
+    LoggerGlobal.Write("Forcing session write before bungie  validation ends ");
+    await httpRequest.HttpContext.Session.CommitAsync();
+    
     if (_BungieValidationResults.ContainsKey(token))
     {
         _BungieValidationResults.Remove(token);
@@ -309,7 +323,7 @@ app.MapGet("/platform/bungie/validate", async (HttpRequest httpRequest) =>
 
 // Start Discord Linking
 
-app.MapGet("/platform/discord/login", (HttpRequest httpReq) =>
+app.MapGet("/platform/discord/login", async (HttpRequest httpReq) =>
 {
     LoggerGlobal.Write("Starting Discord Login");
     httpReq.Query.TryGetValue("token", out var tokenValues);
@@ -342,6 +356,9 @@ app.MapGet("/platform/discord/login", (HttpRequest httpReq) =>
     var hashResults = Convert.ToHexString(MD5.HashData(Encoding.UTF8.GetBytes($"{token}||{timestamp}")));
     var discordState = hashResults;
     httpReq.HttpContext.Session.SetString("Discord.State", discordState);
+    
+    LoggerGlobal.Write("Forcing session write before discord login login");
+    await httpReq.HttpContext.Session.CommitAsync();
 
     var scopes = new string[] { "identify", "guilds", "email", "guilds.members.read" };
     
@@ -369,6 +386,7 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
     {
         token = "";
         doProcess = false;
+        LoggerGlobal.Write($"No discord token is tied to this session");
     }
 
     if (oauthError != null && oauthError.Length > 0)
@@ -410,8 +428,9 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
     req.AddParameter("redirect_uri", _DiscordConfig.RedirectUrl);
     req.AddParameter("scope", String.Join('+', scopes));
 
-    //reuse the raw RestSharp client of the bungie client. This is safe since its the raw http client with no modificationbs
+    //reuse the raw RestSharp client of the bungie client. This is safe since its the raw http client with no modifications
     var oauthResponse = await BungieClient.Client.ExecuteAsync<DiscordValidationResponse>(req);
+    
     var accessToken = "";
     if (oauthResponse.IsSuccessful && oauthResponse.Data != null)
     {
@@ -419,7 +438,24 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
     }
     else
     {
-        return Results.Text("Failed to login. Please try again.");
+        LoggerGlobal.Write($"{JsonSerializer.Serialize(oauthResponse)}", LogLevel.Error);
+        
+        // do a force logout to make sure all session information is clear 
+        // and clear any cookies as well tied in our response
+        LoggerGlobal.Write("Forcing logout");
+        httpRequest.HttpContext.Session.Clear();
+        await httpRequest.HttpContext.Session.CommitAsync();
+    
+        // clear cookies
+        foreach (var cookie in httpRequest.Cookies.Keys)
+        {
+            httpRequest.HttpContext.Response.Cookies.Delete(cookie);
+        }
+    
+        LoggerGlobal.Write("Done clearing cookies");
+        
+        // after 15 minutes, our sessions are cleared out. However discord has its own rate limiting and it may just be that we are globally rate limited
+        return Results.Text("Discord failed to authenticate you. Please close this tab and try to login after 20 minutes and try again.");
     }
 
     var userResponse = await DiscordClient.Get<DiscordUserResponse>("/users/@me", accessToken);
@@ -644,7 +680,7 @@ app.MapGet("/platform/discord/session", (HttpRequest httpRequest) =>
 
 });
 
-app.MapGet("/platform/discord/logout", (HttpRequest httpRequest) =>
+app.MapGet("/platform/discord/logout", async (HttpRequest httpRequest) =>
 {
     LoggerGlobal.Write("Logging out from Discord Profile");
     var discordKeys = httpRequest.HttpContext.Session.Keys.Where((x) => x.Contains("Discord."));
@@ -652,6 +688,10 @@ app.MapGet("/platform/discord/logout", (HttpRequest httpRequest) =>
     {
         httpRequest.HttpContext.Session.Remove(discordKey);
     }
+    
+    LoggerGlobal.Write("Forcing a write after clearing the session");
+    await httpRequest.HttpContext.Session.CommitAsync();
+    
     return Results.Text("200 OK");
 });
 
