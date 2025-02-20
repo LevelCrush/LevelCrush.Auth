@@ -23,16 +23,9 @@ var _DiscordConfig = DiscordConfig.Load();
 var _DiscordValidationResults = new Dictionary<string, (DiscordValidationResult,long)>();
 var _BungieValidationResults = new Dictionary<string, (BungieValidationResult, long)>();
 
-builder.Services.AddDistributedMemoryCache();
-builder.Services.AddSession(options =>
-{
-    options.IdleTimeout = TimeSpan.FromMinutes(15);
-    options.Cookie.HttpOnly = true;
-    options.Cookie.IsEssential = true;
-    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
-    options.Cookie.SameSite = SameSiteMode.None;
-    //options.Cookie.Domain = "levelcrush.com"
-});
+var _DiscordSessionState = new Dictionary<string, (SessionState, long)>();
+var _BungieSessionState = new Dictionary<string, (SessionState, long)>();
+
 
 builder.Services.AddCors(options =>
 {
@@ -41,49 +34,15 @@ builder.Services.AddCors(options =>
         policy.AllowAnyHeader()
             .AllowAnyMethod()
             .SetIsOriginAllowed(origin => true)
-            .AllowCredentials();/*AllowCredentials()
-
-
-            .WithOrigins("levelcrush.com",
-                "www.levelcrush.com",
-                "account.levelcrush.com",
-                "accounts.levelcrush.com",
-                "assets.levelcrush.com",
-                "spt.levelcrush.com",
-                "dev-levelcrush.myshopify.com",
-                "dev-auth.levelcrush.com",
-                "auth.levelcrush.com",
-                "shopify.com",
-                "trycloudflare.com") */
-        
+            .AllowCredentials();        
     });
-    
 });
 
 
 var app = builder.Build();
 
 app.UseRouting();
-app.UseSession();
 app.UseCors();
-
-
-app.MapGet("/logout", async (HttpRequest httpRequest) =>
-{
-    LoggerGlobal.Write("Forcing logout");
-    httpRequest.HttpContext.Session.Clear();
-    await httpRequest.HttpContext.Session.CommitAsync();
-    
-    // clear cookies
-    foreach (var cookie in httpRequest.Cookies.Keys)
-    {
-        httpRequest.HttpContext.Response.Cookies.Delete(cookie);
-    }
-    
-    LoggerGlobal.Write("Done clearing cookies");
-    
-    return Results.Text("200 OK");
-});
 
 
 
@@ -113,40 +72,6 @@ app.MapPost("/platform/bungie/claim", async (HttpRequest httpRequest) =>
     }
 });
 
-// remove all bungie/destiny related keys
-app.MapGet("/platform/bungie/logout", async (HttpRequest httpRequest) =>
-{
-    httpRequest.HttpContext.Session.Remove("Destiny.MembershipID");
-    httpRequest.HttpContext.Session.Remove("Destiny.Clan");
-    httpRequest.HttpContext.Session.Remove("Destiny.MembershipPlatform");
-    httpRequest.HttpContext.Session.Remove("Destiny.DisplayName");
-    httpRequest.HttpContext.Session.Remove("BungieState");
-    
-    LoggerGlobal.Write("Forcing a write after clearing the bungie session");
-    await httpRequest.HttpContext.Session.CommitAsync();
-
-    
-    return Results.Text("200 OK");
-});
-
-// from our session retrieve bungie/destiny related session information
-app.MapGet("/platform/bungie/session", (HttpRequest httpRequest) =>
-{
-    
-    var membershipId = httpRequest.HttpContext.Session.GetString("Destiny.MembershipID");
-    var inClan = httpRequest.HttpContext.Session.GetInt32("Destiny.Clan") == 1;
-    var membershipPlatform = httpRequest.HttpContext.Session.GetInt32("Destiny.MembershipPlatform");
-    var displayName = httpRequest.HttpContext.Session.GetString("Destiny.DisplayName");
-
-    return Results.Json(new BungieValidationResult()
-    {
-        MembershipId = membershipId ?? String.Empty,
-        InNetworkClan = inClan,
-        MembershipType = membershipPlatform ?? -1,
-        DisplayName = displayName ?? String.Empty,
-    });
-
-});
 
 
 // start the login process to use Official Bungie OAuth
@@ -160,22 +85,37 @@ app.MapGet("/platform/bungie/login",  async (HttpRequest httpReq) =>
         token = "";
     }
     
-    httpReq.HttpContext.Session.SetString("BungieXToken", token);
     var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     
     // technically we can do better here...but for now this works
     var hashResults = Convert.ToHexString(MD5.HashData(Encoding.UTF8.GetBytes($"{token}||{timestamp}")));
     var bungieState = hashResults;
-    httpReq.HttpContext.Session.SetString("BungieState", bungieState);
+
+    if (_BungieSessionState.ContainsKey(bungieState))
+    {
+        _BungieSessionState.Remove(bungieState);
+    }
     
-    LoggerGlobal.Write("Forcing session write before bungie login starts");
-    await httpReq.HttpContext.Session.CommitAsync();
+    _BungieSessionState.Add(bungieState,(new SessionState()
+    {
+        Token = token,
+        State = bungieState,
+    }, timestamp));
     
-        
+    LoggerGlobal.Write($"Starting Bungie login for session token: {token}");
+    
     var authorizeUrl =
         $"https://www.bungie.net/en/OAuth/Authorize?response_type=code&client_id={HttpUtility.UrlEncode(_DestinyConfig.ClientId)}&state={bungieState}&prompt=prompt";
+    
     return Results.Redirect(authorizeUrl, false, false);
 });
+
+app.MapMethods("/platform/bungie/validate",new [] { HttpMethods.Head }, async (HttpRequest HttpRequest) =>
+{
+    LoggerGlobal.Write("HEAD met for Bungie Validation login");
+    return Results.Text("200 OK. Your browser requested the HTTP HEAD method. This is here to prevent your code from being used twice.");
+});
+
 
 // validate the codes that came back from the oauth request and store into session the required information
 app.MapGet("/platform/bungie/validate", async (HttpRequest httpRequest) =>
@@ -191,33 +131,44 @@ app.MapGet("/platform/bungie/validate", async (HttpRequest httpRequest) =>
     
     var doProcess = true;
     
-    
-    var token = httpRequest.HttpContext.Session.GetString("BungieXToken");
-    if (token == null)
-    {
-        token = "";
-        doProcess = false;
-    }
-
     if (oauthError != null && oauthError.Length > 0)
     {
         LoggerGlobal.Write($"There was an error found in the oauth request.\n{oauthError}", LogLevel.Error);
         doProcess = false;
     }
    
-    if (oauthCode == null && (oauthCode != null && oauthCode.Length == 0))
+    if (oauthCode == null || (oauthCode != null && oauthCode.Length == 0))
     {
         LoggerGlobal.Write($"There was no oauth code found in the request", LogLevel.Error);
+
         doProcess = false;
     }
 
+    if (!_BungieSessionState.ContainsKey(oauthState))
+    {
+        doProcess = false;
+        LoggerGlobal.Write($"State does not exist: Bungie: {oauthState}");
+    }
+    var session = _BungieSessionState[oauthState].Item1;
 
-    var sessionState = httpRequest.HttpContext.Session.GetString("BungieState");
+    var sessionState = session.State;
     if (oauthState == null || (oauthState != null && oauthState != sessionState))
     {
         LoggerGlobal.Write($"States are mismatching. Bungie: {oauthState} || Session: {sessionState}", LogLevel.Error);
+        oauthState = "";
         doProcess = false;
     }
+
+    
+    var token = session.Token;
+    if (token == null)
+    {
+        token = "";
+        doProcess = false;
+    }
+
+
+    LoggerGlobal.Write($"Validating login for session token: {token}");
 
     if (!doProcess)
     {
@@ -253,10 +204,8 @@ app.MapGet("/platform/bungie/validate", async (HttpRequest httpRequest) =>
     var membershipDisplayName = "";
     if (doProcess)
     {
-       // var userReq = await BungieClient.Get($"/User/GetMembershipsById/{response.Data.MembershipId}/-1/")
-       //     .Send<BungieMembershipData>();
 
-        var dReq = await DestinyMember.MembershipById(response.Data.MembershipId);
+        var dReq = await DestinyMember.MembershipById(validationResponse.MembershipId);
         
         if (dReq != null)
         {
@@ -287,14 +236,6 @@ app.MapGet("/platform/bungie/validate", async (HttpRequest httpRequest) =>
     }
     
     
-    httpRequest.HttpContext.Session.SetString("Destiny.MembershipID", membershipId.ToString());
-    httpRequest.HttpContext.Session.SetInt32("Destiny.Clan", inClan ? 1 : 0);
-    httpRequest.HttpContext.Session.SetInt32("Destiny.MembershipPlatform", membershipPlatform);
-    httpRequest.HttpContext.Session.SetString("Destiny.DisplayName", membershipDisplayName);
-    
-    LoggerGlobal.Write("Forcing session write before bungie  validation ends ");
-    await httpRequest.HttpContext.Session.CommitAsync();
-    
     if (_BungieValidationResults.ContainsKey(token))
     {
         _BungieValidationResults.Remove(token);
@@ -307,6 +248,9 @@ app.MapGet("/platform/bungie/validate", async (HttpRequest httpRequest) =>
         MembershipType = membershipPlatform,
         DisplayName = membershipDisplayName,
     }, DateTimeOffset.UtcNow.ToUnixTimeSeconds()));
+    
+    
+    LoggerGlobal.Write($"Done Logging in via Bungie for Session Token: {token}");
     
     var html =
         $"<!DOCTYPE html><html><head><title>Auth | Level Crush</title></head><body><p>Validated. You can close this window now.</p><script>window.close();</script></body><html>";
@@ -325,7 +269,7 @@ app.MapGet("/platform/bungie/validate", async (HttpRequest httpRequest) =>
 
 app.MapGet("/platform/discord/login", async (HttpRequest httpReq) =>
 {
-    LoggerGlobal.Write("Starting Discord Login");
+
     httpReq.Query.TryGetValue("token", out var tokenValues);
     var token = tokenValues.FirstOrDefault();
     if (token == null)
@@ -346,25 +290,40 @@ app.MapGet("/platform/discord/login", async (HttpRequest httpReq) =>
     {
         userRedirect = "";
     }
-
-    httpReq.HttpContext.Session.SetString("Discord.UserRedirect", userRedirect);
-    httpReq.HttpContext.Session.SetString("Discord.RedirectUrl", redirect);
-    httpReq.HttpContext.Session.SetString("Discord.XToken", token);
+    
+    LoggerGlobal.Write($"Starting Discord Login: {token}");
+    
     var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     
     // technically we can do better here...but for now this works
     var hashResults = Convert.ToHexString(MD5.HashData(Encoding.UTF8.GetBytes($"{token}||{timestamp}")));
     var discordState = hashResults;
-    httpReq.HttpContext.Session.SetString("Discord.State", discordState);
     
-    LoggerGlobal.Write("Forcing session write before discord login login");
-    await httpReq.HttpContext.Session.CommitAsync();
-
+    if(_DiscordSessionState.ContainsKey(discordState))
+    {
+        _DiscordSessionState.Remove(discordState);
+    }
+    
+    _DiscordSessionState.Add(discordState, (new SessionState()
+    {
+        Token = token,
+        State = discordState,
+        RedirectUrl = redirect,
+        UserRedirect = userRedirect,
+    }, timestamp));
+    
     var scopes = new string[] { "identify", "guilds", "email", "guilds.members.read" };
     
     var authorizeUrl =
         $"https://discord.com/api/oauth2/authorize?response_type=code&client_id={HttpUtility.UrlEncode(_DiscordConfig.ClientId)}&scope={String.Join('+', scopes)}&state={discordState}&redirect_uri={HttpUtility.UrlEncode(_DiscordConfig.RedirectUrl)}&prompt=none";
     return Results.Redirect(authorizeUrl, false, false);
+});
+
+
+app.MapMethods("/platform/discord/validate",new [] { HttpMethods.Head }, async (HttpRequest HttpRequest) =>
+{
+    LoggerGlobal.Write("HEAD met for Discord Validation login");
+    return Results.Text("200 OK. Your browser requested the HTTP HEAD method. This is here to prevent your code from being used");
 });
 
 app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
@@ -380,34 +339,43 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
     
     var doProcess = true;
     
-    
-    var token = httpRequest.HttpContext.Session.GetString("Discord.XToken");
-    if (token == null)
-    {
-        token = "";
-        doProcess = false;
-        LoggerGlobal.Write($"No discord token is tied to this session");
-    }
-
     if (oauthError != null && oauthError.Length > 0)
     {
         LoggerGlobal.Write($"There was an error found in the oauth request.\n{oauthError}", LogLevel.Error);
         doProcess = false;
     }
    
-    if (oauthCode == null && (oauthCode != null && oauthCode.Length == 0))
+    if (oauthCode == null || (oauthCode != null && oauthCode.Length == 0))
     {
         LoggerGlobal.Write($"There was no oauth code found in the request", LogLevel.Error);
         doProcess = false;
     }
 
+    if (!_DiscordSessionState.ContainsKey(oauthState))
+    {
+        LoggerGlobal.Write($"The discord oauth state does not exist.", LogLevel.Error);
+        doProcess = false;
+    }
 
-    var sessionState = httpRequest.HttpContext.Session.GetString("Discord.State");
+    var session = _DiscordSessionState[oauthState].Item1;
+    var sessionState = session.State;
+    
+    // with the recent changes, this should actually be impossible. But just in case
     if (oauthState == null || (oauthState != null && oauthState != sessionState))
     {
         LoggerGlobal.Write($"States are mismatching. Discord: {oauthState} || Session: {sessionState}", LogLevel.Error);
         doProcess = false;
     }
+    
+    var token = session.Token;
+    if (token == null)
+    {
+        token = "";
+        doProcess = false;
+        LoggerGlobal.Write($"No discord token is tied to this session");
+    }
+    
+    LoggerGlobal.Write($"Validating Discord Login tied to session token: {token}");
 
     if (!doProcess)
     {
@@ -427,9 +395,9 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
     req.AddParameter("code", oauthCode);
     req.AddParameter("redirect_uri", _DiscordConfig.RedirectUrl);
     req.AddParameter("scope", String.Join('+', scopes));
-
-    //reuse the raw RestSharp client of the bungie client. This is safe since its the raw http client with no modifications
-    var oauthResponse = await BungieClient.Client.ExecuteAsync<DiscordValidationResponse>(req);
+    
+    // send using the raw client to avoid any retry logic
+    var oauthResponse = await DiscordClient.Client.ExecuteAsync<DiscordValidationResponse>(req);
     
     var accessToken = "";
     if (oauthResponse.IsSuccessful && oauthResponse.Data != null)
@@ -439,23 +407,15 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
     else
     {
         LoggerGlobal.Write($"{JsonSerializer.Serialize(oauthResponse)}", LogLevel.Error);
-        
-        // do a force logout to make sure all session information is clear 
-        // and clear any cookies as well tied in our response
-        LoggerGlobal.Write("Forcing logout");
-        httpRequest.HttpContext.Session.Clear();
-        await httpRequest.HttpContext.Session.CommitAsync();
-    
-        // clear cookies
-        foreach (var cookie in httpRequest.Cookies.Keys)
+
+        var errorMessage = "No information could be retrieved";
+        if (oauthResponse.Content != null && oauthResponse.Content.Length > 0)
         {
-            httpRequest.HttpContext.Response.Cookies.Delete(cookie);
+            errorMessage = oauthResponse.Content;
         }
-    
-        LoggerGlobal.Write("Done clearing cookies");
         
         // after 15 minutes, our sessions are cleared out. However discord has its own rate limiting and it may just be that we are globally rate limited
-        return Results.Text("Discord failed to authenticate you. Please close this tab and try to login after 20 minutes and try again.");
+        return Results.Text($"Discord failed to authenticate you. Please close this tab and try to login after 20 minutes and try again. Additional Information Below: <br /><br /><xmp>{errorMessage}</xmp>");
     }
 
     var userResponse = await DiscordClient.Get<DiscordUserResponse>("/users/@me", accessToken);
@@ -544,25 +504,11 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
         }
             
     }
-    
-    httpRequest.HttpContext.Session.SetString("Discord.GlobalName", discordGlobalName);
-    httpRequest.HttpContext.Session.SetString("Discord.DiscordID", discordId);
-    httpRequest.HttpContext.Session.SetInt32("Discord.InServer", inGuild ? 1 : 0);
-    httpRequest.HttpContext.Session.SetString("Discord.DiscordHandle", discordHandle);
-    httpRequest.HttpContext.Session.SetString("Discord.Email", discordEmail);
-    httpRequest.HttpContext.Session.SetInt32($"Discord.IsAdmin", isAdmin ? 1 : 0);
-    httpRequest.HttpContext.Session.SetInt32($"Discord.IsModerator", isModerator ? 1 : 0);
-    httpRequest.HttpContext.Session.SetInt32($"Discord.IsBooster", isBooster ? 1 : 0);
-    httpRequest.HttpContext.Session.SetInt32($"Discord.IsRetired", isRetired ? 1 : 0);
 
-    LoggerGlobal.Write("Forcing a write");
-    await httpRequest.HttpContext.Session.CommitAsync();
-    
 
     var nicknames = new List<string>();
     foreach (var (guild, nickname) in guildNicknames)
     {
-        httpRequest.HttpContext.Session.SetString($"Discord.Guild.{guild}.Nickname", nickname);
         nicknames.Add(nickname);
     }
 
@@ -588,7 +534,9 @@ app.MapGet("/platform/discord/validate", async (HttpRequest httpRequest) =>
 
     _DiscordValidationResults.Add(token, (discordValidationResult, DateTimeOffset.UtcNow.ToUnixTimeSeconds()));
     
-    var currentRedirect = httpRequest.HttpContext.Session.GetString("Discord.RedirectUrl");
+    LoggerGlobal.Write($"Done Logging in via Discord for Session Token: {token}");
+
+    var currentRedirect = session.RedirectUrl;
     if (currentRedirect != null && currentRedirect.Trim().Length > 0)
     {
         return Results.Redirect(currentRedirect, false, false);
@@ -640,59 +588,6 @@ app.MapPost("/platform/discord/claim", async (HttpRequest httpRequest) =>
     {
         return Results.Json(new DiscordValidationResult());
     }
-});
-
-app.MapGet("/platform/discord/session", (HttpRequest httpRequest) =>
-{
-    LoggerGlobal.Write("Getting Discord Profile form Session");
-    var discordId = httpRequest.HttpContext.Session.GetString("Discord.DiscordID");
-    var inServer = httpRequest.HttpContext.Session.GetInt32("Discord.InServer") == 1 ? true : false;
-    var discordHandle =  httpRequest.HttpContext.Session.GetString("Discord.DiscordHandle");
-    var discordEmail =  httpRequest.HttpContext.Session.GetString("Discord.Email");
-    var isAdmin = httpRequest.HttpContext.Session.GetInt32("Discord.IsAdmin") == 1 ? true : false;
-    var isModerator = httpRequest.HttpContext.Session.GetInt32("Discord.IsModerator") == 1 ? true : false;
-    var globalName = httpRequest.HttpContext.Session.GetString("Discord.GlobalName");
-    var isRetired = httpRequest.HttpContext.Session.GetInt32("Discord.IsRetired") == 1 ? true : false;
-    var isBooster = httpRequest.HttpContext.Session.GetInt32("Discord.IsBooster") == 1 ? true : false;
-    var userRedirect = httpRequest.HttpContext.Session.GetString("Discord.UserRedirect");
-
-    var nicknames = new List<string>();
-    var nicknameKeys = httpRequest.HttpContext.Session.Keys.Where((x) => x.StartsWith("Discord.Guild.") && x.EndsWith("Nickname"));
-    foreach (var key  in nicknameKeys)
-    {
-        nicknames.Add(httpRequest.HttpContext.Session.GetString(key) ?? "@Unknown");
-    }
-    
-    return Results.Json(new DiscordValidationResult()
-    {
-        Id = discordId ?? "",
-        InServer = inServer,
-        Handle = discordHandle ?? "",
-        Email = discordEmail ?? "",
-        IsAdmin = isAdmin,
-        IsModerator = isModerator,
-        Nicknames = nicknames.ToArray(),
-        GlobalName = globalName ?? "",
-        IsRetired = isRetired,
-        IsBooster = isBooster,
-        UserRedirect = userRedirect ?? ""
-    });
-
-});
-
-app.MapGet("/platform/discord/logout", async (HttpRequest httpRequest) =>
-{
-    LoggerGlobal.Write("Logging out from Discord Profile");
-    var discordKeys = httpRequest.HttpContext.Session.Keys.Where((x) => x.Contains("Discord."));
-    foreach (var discordKey in discordKeys)
-    {
-        httpRequest.HttpContext.Session.Remove(discordKey);
-    }
-    
-    LoggerGlobal.Write("Forcing a write after clearing the session");
-    await httpRequest.HttpContext.Session.CommitAsync();
-    
-    return Results.Text("200 OK");
 });
 
 app.Run();
