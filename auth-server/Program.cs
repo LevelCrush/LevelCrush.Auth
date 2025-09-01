@@ -205,7 +205,7 @@ app.MapGet("/platform/bungie/validate", async (HttpRequest httpRequest) =>
     if (doProcess)
     {
 
-        LoggerGlobal.Write($"Requesting membership information for {JsonSerializer.Serialize(validationResponse)}");
+        LoggerGlobal.Write($"Requesting membership information for {validationResponse.MembershipId}");
         var dReq = await DestinyMember.MembershipById(validationResponse.MembershipId);
         
         if (dReq != null)
