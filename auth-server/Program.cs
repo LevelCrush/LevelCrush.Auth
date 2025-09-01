@@ -205,6 +205,7 @@ app.MapGet("/platform/bungie/validate", async (HttpRequest httpRequest) =>
     if (doProcess)
     {
 
+        LoggerGlobal.Write($"Requesting membership information for {JsonSerializer.Serialize(validationResponse)}");
         var dReq = await DestinyMember.MembershipById(validationResponse.MembershipId);
         
         if (dReq != null)
@@ -575,10 +576,12 @@ app.MapPost("/platform/discord/claim", async (HttpRequest httpRequest) =>
 
     if (token == null || token.Length == 0)
     {
+        LoggerGlobal.Write("No token provided");
         return Results.Json(new DiscordValidationResult());
     }
     if (_DiscordValidationResults.ContainsKey(token))
     {
+        LoggerGlobal.Write("Copying Discord Claim");
         var cpy = JsonSerializer.Deserialize<DiscordValidationResult>(
             JsonSerializer.Serialize(_DiscordValidationResults[token].Item1));
         _DiscordValidationResults.Remove(token);
@@ -586,6 +589,7 @@ app.MapPost("/platform/discord/claim", async (HttpRequest httpRequest) =>
     }
     else
     {
+        LoggerGlobal.Write("Returning empty discord claim result");
         return Results.Json(new DiscordValidationResult());
     }
 });
