@@ -87,6 +87,20 @@ app.MapGet("/platform/bungie/login",  async (HttpRequest httpReq) =>
     
     var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     
+    httpReq.Query.TryGetValue("redirectUrl", out var redirectValues);
+    var redirect = redirectValues.FirstOrDefault();
+    if (redirect == null)
+    {
+        redirect = "";
+    }
+    
+    httpReq.Query.TryGetValue("userRedirect", out var userRedirectValues);
+    var userRedirect = userRedirectValues.FirstOrDefault();
+    if (userRedirect == null)
+    {
+        userRedirect = "";
+    }
+    
     // technically we can do better here...but for now this works
     var hashResults = Convert.ToHexString(MD5.HashData(Encoding.UTF8.GetBytes($"{token}||{timestamp}")));
     var bungieState = hashResults;
@@ -100,6 +114,8 @@ app.MapGet("/platform/bungie/login",  async (HttpRequest httpReq) =>
     {
         Token = token,
         State = bungieState,
+        RedirectUrl = redirect,
+        UserRedirect = userRedirect,
     }, timestamp));
     
     LoggerGlobal.Write($"Starting Bungie login for session token: {token}");
@@ -252,14 +268,21 @@ app.MapGet("/platform/bungie/validate", async (HttpRequest httpRequest) =>
     
     
     LoggerGlobal.Write($"Done Logging in via Bungie for Session Token: {token}");
-    
-    var html =
-        $"<!DOCTYPE html><html><head><title>Auth | Level Crush</title></head><body><p>Validated. You can close this window now.</p><script>window.close();</script></body><html>";
-    
-    httpRequest.HttpContext.Response.ContentType = "text/html";
-    httpRequest.HttpContext.Response.ContentLength = Encoding.UTF8.GetByteCount(html);
+    var currentRedirect = session.RedirectUrl;
+    if (currentRedirect != null && currentRedirect.Trim().Length > 0)
+    {
+        return Results.Redirect(currentRedirect, false, false);
+    }
+    else
+    {
+        var html =
+            $"<!DOCTYPE html><html><head><title>Auth | Level Crush</title></head><body><p>Validated. You can close this window now.</p><script>window.close();</script></body><html>";
 
-    return Results.Content(html);
+        httpRequest.HttpContext.Response.ContentType = "text/html";
+        httpRequest.HttpContext.Response.ContentLength = Encoding.UTF8.GetByteCount(html);
+
+        return Results.Content(html);
+    }
 
 }); 
 
